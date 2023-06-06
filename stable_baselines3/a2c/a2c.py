@@ -83,6 +83,7 @@ class A2C(OnPolicyAlgorithm):
         seed: Optional[int] = None,
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
+        ent_decay_num_steps: Optional[int] = None,
         save_path: Optional[str] = None,
     ):
         super().__init__(
@@ -112,6 +113,8 @@ class A2C(OnPolicyAlgorithm):
             ),
             save_path=save_path,
         )
+
+        self.ent_decay_num_steps = ent_decay_num_steps
 
         self.normalize_advantage = normalize_advantage
 
@@ -163,7 +166,8 @@ class A2C(OnPolicyAlgorithm):
             else:
                 entropy_loss = -th.mean(entropy)
 
-            loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
+            ent_coef_cur = self.ent_coef * (1 - min(self._n_updates / self.ent_decay_num_steps, 1)) + 0.01
+            loss = policy_loss + ent_coef_cur * entropy_loss + self.vf_coef * value_loss
 
             # Optimization step
             self.policy.optimizer.zero_grad()

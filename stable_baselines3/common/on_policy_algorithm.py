@@ -162,7 +162,6 @@ class OnPolicyAlgorithm(BaseAlgorithm):
 
         if hasattr(env.envs[0].env, "_is_park_env"): # why env.envs[0].env? Because env is a vectorized env, env.envs[0] is first and only Monitor(ParkWrapper()), and env.envs[0].env removes Monitor wrapper to give ParkWrapper instance
             data = {'observations': [], 'actions': [], 'rewards': [], 'dones': [], 'next_observations': [], 'exogenous': [], 'next_exogenous': []} 
-            start = self.num_timesteps
 
         while n_steps < n_rollout_steps:
             if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
@@ -224,6 +223,11 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                     # # debug
                     # print(f'exo: {self._last_obs[:, -1:].flatten()}')
                     # if dones[0]: print(f'\n\nnext episode starting....')
+                elif env.envs[0].env.env_name == 'abr_sim': # For Park's abr_sim env, self._last_obs.shape = (1,11) and first value (last chunk throughput) is exogenous. It is possible that second value (last chunk download time) is also exo?
+                    data['observations'].append(self._last_obs[:, 1:].flatten())
+                    data['next_observations'].append(new_obs[:, 1:].flatten())
+                    data['exogenous'].append(self._last_obs[:, :1].flatten())
+                    data['next_exogenous'].append(new_obs[:, :1].flatten())
                 else:
                     raise NotImplementedError(f"env {env.envs[0].env.env_name}'s exo-endo separation not implemented yet!")
 
@@ -234,22 +238,11 @@ class OnPolicyAlgorithm(BaseAlgorithm):
             # Compute value for the last timestep
             values = self.policy.predict_values(obs_as_tensor(new_obs, self.device))
 
-        if hasattr(env.envs[0].env, "_is_park_env"):
-            end = self.num_timesteps
-            data['observations'] = np.array(data['observations'])
-            data['actions'] = np.array(data['actions'])
-            data['rewards'] = np.array(data['rewards'])
-            data['dones'] = np.array(data['dones'])
-            data['next_observations'] = np.array(data['next_observations'])
-            data['exogenous'] = np.array(data['exogenous'])
-            data['next_exogenous'] = np.array(data['next_exogenous'])
-            np.savez(f'{self.save_path}/replay_buffers/data_{start}_to_{end}_timesteps.npz', observations=data['observations'], actions=data['actions'], rewards=data['rewards'], dones=data['dones'], next_observations=data['next_observations'], exogenous=data['exogenous'], next_exogenous=data['next_exogenous'])
-
         rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
 
         callback.on_rollout_end()
 
-        return True
+        return True, data
 
     def train(self) -> None:
         """
@@ -279,8 +272,32 @@ class OnPolicyAlgorithm(BaseAlgorithm):
 
         callback.on_training_start(locals(), globals())
 
+        if hasattr(self.env.envs[0].env, "_is_park_env"): # why env.envs[0].env? Because env is a vectorized env, env.envs[0] is first and only Monitor(ParkWrapper()), and env.envs[0].env removes Monitor wrapper to give ParkWrapper instance
+            data = {'observations': [], 'actions': [], 'rewards': [], 'dones': [], 'next_observations': [], 'exogenous': [], 'next_exogenous': []} 
+            start = self.num_timesteps
+
         while self.num_timesteps < total_timesteps:
-            continue_training = self.collect_rollouts(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
+            continue_training, rollout_data = self.collect_rollouts(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
+
+            if hasattr(self.env.envs[0].env, "_is_park_env"):
+                # extend
+                for k in data.keys():
+                    data[k].extend(rollout_data[k])
+                # save and reset every million points
+                if self.num_timesteps % 1000_000 == 0:
+                    # save
+                    end = self.num_timesteps
+                    data['observations'] = np.array(data['observations'])
+                    data['actions'] = np.array(data['actions'])
+                    data['rewards'] = np.array(data['rewards'])
+                    data['dones'] = np.array(data['dones'])
+                    data['next_observations'] = np.array(data['next_observations'])
+                    data['exogenous'] = np.array(data['exogenous'])
+                    data['next_exogenous'] = np.array(data['next_exogenous'])
+                    np.savez(f'{self.save_path}/replay_buffers/data_{start}_to_{end}_timesteps.npz', observations=data['observations'], actions=data['actions'], rewards=data['rewards'], dones=data['dones'], next_observations=data['next_observations'], exogenous=data['exogenous'], next_exogenous=data['next_exogenous'])
+                    # reset
+                    data = {'observations': [], 'actions': [], 'rewards': [], 'dones': [], 'next_observations': [], 'exogenous': [], 'next_exogenous': []} 
+                    start = self.num_timesteps
 
             if continue_training is False:
                 break
