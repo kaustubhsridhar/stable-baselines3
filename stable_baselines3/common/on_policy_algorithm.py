@@ -216,18 +216,18 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                 data['rewards'].append(rewards.flatten())
                 data['dones'].append(dones.flatten())
                 if env.envs[0].env.env_name == 'load_balance': # For Park's load_balance env, self._last_obs.shape = (1,11). The last value is the exogenous input. Note: actions.shape = (1,1), rewards.shape=(1,), dones.shape=(1,), new_obs.shape also = (1,11)
-                    data['observations'].append(self._last_obs[:, :-1].flatten())
-                    data['next_observations'].append(new_obs[:, :-1].flatten())
-                    data['exogenous'].append(self._last_obs[:, -1:].flatten())
-                    data['next_exogenous'].append(new_obs[:, -1:].flatten())
+                    data['observations'].append(self._last_obs[:, :-2].flatten())
+                    data['next_observations'].append(new_obs[:, :-2].flatten())
+                    data['exogenous'].append(self._last_obs[:, -2:].flatten())
+                    data['next_exogenous'].append(new_obs[:, -2:].flatten())
                     # # debug
                     # print(f'exo: {self._last_obs[:, -1:].flatten()}')
                     # if dones[0]: print(f'\n\nnext episode starting....')
                 elif env.envs[0].env.env_name == 'abr_sim': # For Park's abr_sim env, self._last_obs.shape = (1,11) and first value (last chunk throughput) is exogenous. It is possible that second value (last chunk download time) is also exo?
-                    data['observations'].append(self._last_obs[:, 1:].flatten())
-                    data['next_observations'].append(new_obs[:, 1:].flatten())
-                    data['exogenous'].append(self._last_obs[:, :1].flatten())
-                    data['next_exogenous'].append(new_obs[:, :1].flatten())
+                    data['observations'].append(self._last_obs[:, 2:].flatten())
+                    data['next_observations'].append(new_obs[:, 2:].flatten())
+                    data['exogenous'].append(self._last_obs[:, :2].flatten())
+                    data['next_exogenous'].append(new_obs[:, :2].flatten())
                 else:
                     raise NotImplementedError(f"env {env.envs[0].env.env_name}'s exo-endo separation not implemented yet!")
 
